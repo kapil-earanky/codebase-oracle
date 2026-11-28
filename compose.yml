@@ -5,16 +5,18 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: example_db
+      POSTGRES_DB: codebase_oracle
     # Core Health Check Configuration
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d example_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d codebase_oracle"]
       interval: 5s
       timeout: 5s
       retries: 5
       start_period: 10s
     ports:
       - "5432:5432"
+    networks:
+      - otel-network
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql
