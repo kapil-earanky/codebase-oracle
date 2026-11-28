@@ -8,6 +8,7 @@ This directory logs significant, hard-to-reverse architectural decisions made wh
 | :--- | :--- | :--- | :--- |
 | [ADR-0001](0001-local-bge-embeddings-and-cosine-hnsw.md) | Use Local `BAAI/bge-base-en-v1.5` (768-dim) with Cosine HNSW | Accepted | 2026-11-24 |
 | [ADR-0002](0002-latest-commit-incremental-sync-model.md) | Latest-Commit-Per-Repo Incremental Sync via `repo_sync_state` | Accepted | 2026-11-24 |
+| [ADR-0003](0003-async-first-io-and-offloaded-compute.md) | Async-First I/O (`psycopg` v3 `AsyncConnectionPool`) with Offloaded Compute | Accepted | 2026-11-24 |
 
 ## Conventions
 

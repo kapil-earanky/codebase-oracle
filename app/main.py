@@ -1,23 +1,35 @@
-from fastapi import Depends, FastAPI
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from typing import Any
 
-from .dependencies import get_query_token, get_token_header
-from .internal import admin
-from .routers import items, users
+from fastapi import FastAPI, HTTPException, Request, status
 
-app = FastAPI(dependencies=[Depends(get_query_token)])
-
-
-app.include_router(users.router)
-app.include_router(items.router)
-app.include_router(
-    admin.router,
-    prefix="/admin",
-    tags=["admin"],
-    dependencies=[Depends(get_token_header)],
-    responses={418: {"description": "I'm a teapot"}},
-)
+from app.db.pool import check_db_health, create_pool
 
 
-@app.get("/")
-async def root():
-    return {"message": "Hello Bigger Applications!"}
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Startup: load models, connect to DBs, start background tasks
+    print("Starting up...")
+    async with create_pool() as pool:
+        app.state.db_pool = pool
+        yield
+    # Shutdown: close connections, release resources
+    print("Shutting down...")
+
+
+app = FastAPI(title="Codebase Oracle", lifespan=lifespan)
+
+
+@app.get("/health/ready", status_code=status.HTTP_200_OK)
+async def readiness_check(request: Request) -> dict[str, Any]:
+
+    health_status = await check_db_health(request.app.state.db_pool)
+
+    # Trigger a 503 if any critical service is down so load balancers pull the container
+    if not health_status.healthy:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=health_status.error
+        )
+
+    return health_status.model_dump()
