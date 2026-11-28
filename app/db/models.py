@@ -6,8 +6,12 @@ from typing import Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+EMBEDDING_DIM = 768  # BAAI/bge-base-en-v1.5 (see ADR-0001)
+
 
 class CodeChunk(BaseModel):
+    """AST-derived source code chunk prior to vector embedding."""
+
     chunk_id: str
     repo_id: str
     commit_sha: str
@@ -30,26 +34,31 @@ class CodeChunk(BaseModel):
 
 
 class EmbeddedCodeChunk(CodeChunk):
+    """AST code chunk paired with its dense embedding vector for PostgreSQL storage."""
+
     embedding: list[float]
 
     @field_validator("embedding")
     @classmethod
     def validate_size(cls, v: list[float]) -> list[float]:
-        # 768 dim for BAAI/bge-base-en-v1.5
-        if len(v) != 768:
+        if len(v) != EMBEDDING_DIM:
             raise ValueError(
-                "BAAI/bge-base-en-v1.5 embeddings must have 768 dimensions"
+                f"BAAI/bge-base-en-v1.5 embeddings must have {EMBEDDING_DIM} dimensions"
             )
         return v
 
 
 class Status(StrEnum):
+    """Lifecycle status of a repository synchronization run."""
+
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 class RepoSyncState(BaseModel):
+    """Active synced commit pointer per repository (see ADR-0002)."""
+
     repo_id: str
     commit_sha: str
     status: Status
@@ -57,6 +66,8 @@ class RepoSyncState(BaseModel):
 
 
 class DBHealthStatus(BaseModel):
+    """Structured readiness probe result for PostgreSQL and pgvector."""
+
     healthy: bool
     pgvector_installed: bool
     code_chunks_exists: bool
@@ -64,9 +75,13 @@ class DBHealthStatus(BaseModel):
 
 
 def compute_chunk_id(
-    commit_sha: str, repo_id: str, filepath: str | Path, start_line: int, end_line: int
+    commit_sha: str,
+    repo_id: str,
+    filepath: str | Path,
+    start_line: int,
+    end_line: int,
 ) -> str:
-    delimiter = "||"
-    filep = Path(filepath).as_posix()
-    combined_string = f"{commit_sha}{delimiter}{repo_id}{delimiter}{filep}{delimiter}{start_line}{delimiter}{end_line}"
-    return hashlib.sha256(combined_string.encode("utf-8")).hexdigest()
+    """Compute a deterministic SHA-256 primary key for a code chunk."""
+    posix_path = Path(filepath).as_posix()
+    payload = f"{commit_sha}||{repo_id}||{posix_path}||{start_line}||{end_line}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

@@ -28,34 +28,37 @@ def test_embedding_settings_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.embedding.max_tokens == 256
 
 
-def test_postgres_settings_and_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_postgres_settings_and_dsn_encodes_special_chars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("POSTGRES_HOST", "db.internal")
     monkeypatch.setenv("POSTGRES_PORT", "5433")
     monkeypatch.setenv("POSTGRES_USER", "oracle")
-    monkeypatch.setenv("POSTGRES_PASSWORD", "secret123")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss/word")
     monkeypatch.setenv("POSTGRES_DB", "test_oracle")
 
     settings = get_settings()
 
     assert settings.postgres.host == "db.internal"
     assert settings.postgres.port == 5433
-    assert settings.postgres.dsn == "postgresql://oracle:secret123@db.internal:5433/test_oracle"
+    assert settings.postgres.dsn == "postgresql://oracle:p%40ss%2Fword@db.internal:5433/test_oracle"
 
 
-def test_redis_settings_dsn_without_and_with_password(
+def test_redis_settings_dsn_empty_and_encoded_password(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.setenv("REDIS_HOST", "redis.local")
     monkeypatch.setenv("REDIS_PORT", "6380")
     monkeypatch.setenv("REDIS_DB", "2")
+    monkeypatch.setenv("REDIS_PASSWORD", "")
 
+    assert get_settings().redis.password is None
     assert get_settings().redis.dsn == "redis://redis.local:6380/2"
 
     get_settings.cache_clear()
-    monkeypatch.setenv("REDIS_PASSWORD", "secret")
+    monkeypatch.setenv("REDIS_PASSWORD", "s@cret/key")
 
-    assert get_settings().redis.dsn == "redis://:secret@redis.local:6380/2"
+    assert get_settings().redis.dsn == "redis://:s%40cret%2Fkey@redis.local:6380/2"
 
 
 def test_otel_settings_override(monkeypatch: pytest.MonkeyPatch) -> None:

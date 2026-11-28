@@ -9,58 +9,61 @@ from psycopg_pool import AsyncConnectionPool, PoolTimeout
 from app.config import get_settings
 from app.db.models import DBHealthStatus
 
-
-async def check_db_health(pool: AsyncConnectionPool) -> DBHealthStatus:
-    # Acquire a connection from the pool
-    pg_vector_installed = False
-    code_chunks_exists = False
-    code_chunks_table_name = "code_chunks"
-    try:
-        async with pool.connection() as conn, conn.cursor() as cur:
-            # Execute your SQL query
-            await cur.execute(
-                "SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = %s);",
-                (code_chunks_table_name,),
-            )
-            result = await cur.fetchone()
-            if result:
-                code_chunks_exists = bool(result[0])
-            await cur.execute(
-                "SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"
-            )
-            result = await cur.fetchone()
-            if result:
-                pg_vector_installed = bool(result[0])
-            return DBHealthStatus(
-                healthy=pg_vector_installed and code_chunks_exists,
-                pgvector_installed=pg_vector_installed,
-                code_chunks_exists=code_chunks_exists,
-            )
-    # The transaction automatically commits here if successful,
-    # or rolls back if an exception occurs inside the block.
-    except (PoolTimeout, Error) as e:
-        return DBHealthStatus(
-            healthy=False,
-            pgvector_installed=pg_vector_installed,
-            code_chunks_exists=code_chunks_exists,
-            error=str(e),
-        )
+_HEALTH_QUERY = """
+SELECT
+    EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector'),
+    to_regclass('public.code_chunks') IS NOT NULL;
+"""
 
 
-async def configure_vector(conn: AsyncConnection[Any]) -> None:
+async def _configure_connection(conn: AsyncConnection[Any]) -> None:
+    """Register pgvector adapters on each new pooled connection and leave it IDLE."""
     await register_vector_async(conn)
     await conn.commit()
 
 
+async def check_db_health(
+    pool: AsyncConnectionPool,
+    *,
+    timeout: float = 2.0,
+) -> DBHealthStatus:
+    """Verify PostgreSQL connectivity, pgvector extension, and code_chunks table."""
+    try:
+        async with pool.connection(timeout=timeout) as conn, conn.cursor() as cur:
+            await cur.execute(_HEALTH_QUERY)
+            row = await cur.fetchone()
+            pgvector_installed = bool(row and row[0])
+            code_chunks_exists = bool(row and row[1])
+            return DBHealthStatus(
+                healthy=pgvector_installed and code_chunks_exists,
+                pgvector_installed=pgvector_installed,
+                code_chunks_exists=code_chunks_exists,
+            )
+    except (PoolTimeout, Error) as exc:
+        return DBHealthStatus(
+            healthy=False,
+            pgvector_installed=False,
+            code_chunks_exists=False,
+            error=str(exc),
+        )
+
+
 @asynccontextmanager
-async def create_pool() -> AsyncGenerator[AsyncConnectionPool, None]:
+async def create_pool(
+    dsn: str | None = None,
+    *,
+    min_size: int = 2,
+    max_size: int = 10,
+    timeout: float = 5.0,
+) -> AsyncGenerator[AsyncConnectionPool, None]:
+    """Open and yield an async PostgreSQL connection pool with pgvector registered."""
     pool = AsyncConnectionPool(
-        conninfo=get_settings().postgres.dsn,
+        conninfo=dsn or get_settings().postgres.dsn,
         open=False,
-        min_size=2,  # Minimum connections to maintain
-        max_size=10,  # Maximum connection capacity
-        timeout=5.0,
-        configure=configure_vector,
+        min_size=min_size,
+        max_size=max_size,
+        timeout=timeout,
+        configure=_configure_connection,
         connection_class=AsyncConnection,
     )
     try:

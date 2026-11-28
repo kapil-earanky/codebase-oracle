@@ -1,2 +1,1 @@
-def hello() -> str:
-    return "Hello from my-app!"
+"""AST-Aware Codebase Oracle application package."""
