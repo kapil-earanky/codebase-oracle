@@ -1,9 +1,10 @@
 [project]
-name = "uv-fastapi-example"
+name = "codebase-oracle"
 version = "0.1.0"
-description = "Add your description here"
+description = "AST-aware code search and Retrieval-Augmented Generation (RAG) engine for large source code repositories."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.112.1",
 ]
+

@@ -6,11 +6,54 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: example_db
+    # Core Health Check Configuration
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d example_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+  
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - otel-network
+
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    container_name: jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+    networks:
+      - otel-network
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8888:8888" # Metrics endpoint for the Collector itself
+    depends_on:
+      - jaeger
+      - redis
+    networks:
+      - otel-network
+
+networks:
+  otel-network:
+    driver: bridge
 
 volumes:
   pgdata: # Stores data outside the container to ensure persistence
